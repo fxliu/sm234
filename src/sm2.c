@@ -1,4 +1,4 @@
-/************************************************************************ 
+﻿/************************************************************************ 
 File  name:	SM2.c
 Version:	SM2_V1.1
 Date:	Sep  27,2016
@@ -913,6 +913,86 @@ int SM2_EnDeTest()
     if(memcmp(M,std_Message,19)!=0)
         return  ERR_SELFTEST_DEC;
     return 0;
+}
+unsigned char hex(char ch)
+{
+	if (ch >= '0' && ch <= '9')
+		return ch - '0';
+	return ch - 'a' + 10;
+}
+// 再SM2_EnDeTest基础上支持旧版RM2密文的解密
+int SM2_EnDeTest2()
+{
+	int  tmp = 0, i = 0;
+
+	unsigned  char  Cipher[0x80] = { 0 };
+	unsigned  char  M[0x80] = { 0 };
+	unsigned  char  kGxy[SM2_NUMWORD * 2] = { 0 };
+	big  ks, x, y;
+	epoint  *kG;
+
+	//standard data 
+	unsigned  char std_priKey[32] = { 0x45, 0xaf, 0xfb, 0x81, 0x63, 0xef, 0xa5, 0x90, 0x96, 0xad, 0xc2, 0x2f, 0x26, 0xe5, 0x56, 0x29, 0x1f, 0x7d, 0xd9, 0xa8, 0x40, 0x4a, 0x1d, 0x77, 0xf4, 0x59, 0x3e, 0xb4, 0x0a, 0xc4, 0x56, 0xdb };
+	// 旧版公钥要去掉第一位04，04是旧版RM2标记
+	unsigned  char std_pubKey[64] = { 0xe1, 0x64, 0xdb, 0x79, 0x5f, 0xe9, 0x84, 0x18, 0xc8, 0x57, 0x29, 0x72, 0x28, 0xa5, 0x7b, 0xff, 0x8f, 0x88, 0x31, 0x3a, 0xc6, 0xbd, 0x3d, 0x19, 0xcc, 0x72, 0x22, 0x67, 0x68, 0x92, 0x6e, 0xb9, 0x66, 0x7a, 0x8d, 0xe7, 0x64, 0x65, 0x0c, 0x45, 0x55, 0x03, 0x93, 0x04, 0xbd, 0x46, 0x09, 0xcd, 0x2a, 0x61, 0x14, 0x10, 0x5b, 0x8d, 0x97, 0x62, 0x08, 0x57, 0x2a, 0x03, 0x00, 0xa2, 0x7c, 0x2b };
+
+	//mip=  mirsys(1000,  16); 
+	//mip->IOBASE=16;
+	MirsysInit();
+
+	x = mirvar(0);
+	y = mirvar(0);
+	ks = mirvar(0);
+	kG = epoint_init();
+	bytes_to_big(32, std_priKey, ks);    //ks  is  the  standard  private  key
+
+	//initiate  SM2  curve 
+	SM2_Init();
+	//generate  key  pair 
+	tmp = SM2_KeyGenerationByPriKey(ks, kG);
+	if (tmp != 0)
+		return  tmp;
+	epoint_get(kG, x, y);
+	big_to_bytes(SM2_NUMWORD, x, kGxy, 1);
+	big_to_bytes(SM2_NUMWORD, y, kGxy + SM2_NUMWORD, 1);
+	// 公钥对比校验
+	if (memcmp(kGxy, std_pubKey, SM2_NUMWORD * 2) != 0)
+		return  ERR_SELFTEST_KG;
+
+	// 密文64位字符串 -> 密文二进制
+	// 注意加密数据头是否有04，04表示是旧版加密数据
+	char szData[] = "04817e08e91068eedff8699aaf57cd68de7d4db486e110ab2a71a655355ff9a568604aa93f951c71a8e243032d485d525487c0cc15d504aaf6d5ff4858341bd32791c11fdae7bc8c5ec5f7ea988f9dc8eedf1d0f1ae8ad3573db57611de1ddddef2a99ba390b9dc67657408c0dc3513adbf6bcef31cfad0e25ee45fc8f9f4345f2";
+	memset(Cipher, 0, sizeof(Cipher));
+	for (int index = 0; index < strlen(szData); index += 2)
+	{
+		Cipher[index / 2] = (hex(szData[index]) << 4) + hex(szData[index + 1]);
+	}
+	// 算法是新版：密文格式转换
+	// 旧版密文结构C1C3C2 -> 新版密文结构C1C3C2
+	// C1 64位，C2 源数据长度相同，C3 32位
+	int c1 = 64, c3 = 32;
+	int c2 = strlen(szData) / 2 - c1 - c3;
+	// 解密
+	if (Cipher[0] == 0x04)
+	{
+		// 04标记位不参与解密运算, 过滤掉
+		c2 -= 1;
+		unsigned char *srcCipher = Cipher + 1;
+		unsigned  char  desCipher[0x80] = { 0 };
+		memcpy(desCipher, srcCipher, c1);
+		memcpy(desCipher + c1 + c3, srcCipher + c1, c2);
+		memcpy(desCipher + c1, srcCipher + c1 + c2, c3);
+		tmp = SM2_Decrypt(ks, desCipher, strlen(szData) / 2, M);
+	}
+	else
+		SM2_Decrypt(ks, Cipher, strlen(szData) / 2, M);
+	M[c2] = '\0';
+	if (tmp != 0)
+		return  tmp;
+	// M 保存的即为原文
+	if (memcmp(M, "99017495b1b7e83bd9ec51807d1e4ea1", 32) != 0)
+		return  ERR_SELFTEST_DEC;
+	return 0;
 }
 
 /****************************************************************

@@ -33,7 +33,12 @@ int main(int argc, char **argv)
 	
 	iResult = SM2_EnDeTest();
 
-	TRACE("#SM2_EnDeTest = %08x \r\n", iResult);	
+	TRACE("#SM2_EnDeTest = %08x \r\n", iResult);
+
+
+	iResult = SM2_EnDeTest2();
+
+	TRACE("#SM2_EnDeTest2 = %08x \r\n", iResult);
 	
 	
 	iResult = SM2_SignVerifyTest();
